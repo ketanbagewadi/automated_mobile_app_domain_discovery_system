@@ -1,0 +1,3 @@
+# Core uses only the Python standard library. Optional:
+androguard>=4.0              # auto-detect package/app label from APK
+google-play-scraper>=1.2.6   # resolve app name -> package id when 'package' column is empty
