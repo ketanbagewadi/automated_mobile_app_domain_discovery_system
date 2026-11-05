@@ -26,14 +26,13 @@ applications.csv -> download APK -> unzip (xapk/apks too) -> apktool + jadx deco
     python main.py apk app.apk --no-llm --no-decompile  # fastest
 
 ## Output
-    output/<package>/domains.csv|json   domain, registered_domain, category, related, is_api,
-                                        api_evidence, sample_paths, confidence, reason, source
-    output/all_domains.csv              every app combined
-    output/failed.csv                   apps that failed + why
+    output/<AppName>.txt     one related domain per line (first-party + API + CDN), nothing else
+    output/failed.csv        apps that failed + why
+    --full-report            also save every domain with category/is_api/source as CSV
 
-`source` shows where each domain came from: dex, manifest, resources, native, assets, apktool, jadx,
-dynamic, llm_suggested, crtsh. `is_api` = host label (api., gw., graph.), API-style paths (/v1/, /api/),
-or HTTP-client base-URL constants. `retrofit_endpoints` in the JSON lists @GET/@POST paths from jadx output.
+Fast by default: rules only (no Llama), apktool decode, apps processed 4 in parallel.
+Opt-in extras: --jadx (Java decompile, slower, finds more), --llm (Llama on leftover unknown domains),
+--expand (crt.sh), --dynamic / --pcap (runtime traffic).
 
 ## Limits
 - Google Play / App Store downloads are restricted; apkeep/APKPure cover many but not all apps.

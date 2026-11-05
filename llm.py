@@ -43,39 +43,36 @@ def chat_json(host, model, system, user, timeout=600) -> dict:
 SYSTEM = "You are a network-forensics analyst. Reply with valid JSON only. Never invent facts."
 
 
-def classify(host, model, app_name, package, domains, batch=25):
-    """Return {domain: (category, confidence, reason)}."""
+def classify(host, model, app_name, package, domains, batch=40):
+    """Return {domain: (category, confidence, reason)}. Compact JSON output keeps each call fast."""
     result = {}
-    for i in range(0, len(domains), batch):
+    total = (len(domains) + batch - 1) // batch
+    for n, i in enumerate(range(0, len(domains), batch), 1):
         chunk = domains[i:i + batch]
         prompt = f"""Mobile app: "{app_name}" (package: {package})
 Classify each domain found inside its APK relative to this app.
 
-Categories:
-- first_party: domain run by the app's own company/brand (APIs, websites, regional variants)
-- same_company: other domain owned by the same parent company
-- cdn_infra: CDN / cloud / edge hostnames likely serving this app
-- third_party_sdk: analytics, ads, crash reporting, social login, payments SDKs
-- unrelated: libraries, docs links, standards, test/sample domains
+Categories: first_party (app's own company/brand), same_company (other domain of the same parent company),
+cdn_infra (CDN/cloud/edge serving this app), third_party_sdk (analytics, ads, crash, social login, payments),
+unrelated (libraries, docs, standards, test domains).
 
 Domains:
 {json.dumps(chunk)}
 
-Return JSON: {{"results":[{{"domain":"...","category":"<one category>","confidence":0.0-1.0,"reason":"<max 10 words>"}}]}}"""
+Return JSON mapping every domain to one category, e.g. {{"example.com":"unrelated"}}"""
         try:
-            data = chat_json(host, model, SYSTEM, prompt)
+            data = chat_json(host, model, SYSTEM, prompt, timeout=300)
         except Exception as e:
-            print(f"[!] LLM batch failed: {e}")
+            print(f"[!] LLM batch {n}/{total} failed: {e}")
             data = {}
-        for r in data.get("results", []):
-            d = str(r.get("domain", "")).lower().strip()
-            cat = r.get("category")
+        data = data.get("results", data) if isinstance(data, dict) else {}
+        if isinstance(data, list):  # tolerate [{"domain":..,"category":..}]
+            data = {str(r.get("domain", "")).lower(): r.get("category") for r in data if isinstance(r, dict)}
+        for d, cat in data.items():
+            d = str(d).lower().strip()
             if d in chunk and cat in CATEGORIES:
-                try:
-                    conf = float(r.get("confidence", 0.5))
-                except (TypeError, ValueError):
-                    conf = 0.5
-                result[d] = (cat, max(0.0, min(conf, 1.0)), str(r.get("reason", ""))[:120])
+                result[d] = (cat, 0.7, "")
+        print(f"    llm batch {n}/{total} done ({len(result)} classified)", flush=True)
     return result
 
 

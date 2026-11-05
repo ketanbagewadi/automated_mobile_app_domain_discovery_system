@@ -78,7 +78,7 @@ def rule_classify(host: str, tokens: set):
     """Return (category, confidence, reason) or None if undecided (-> LLM)."""
     reg_label = registered_domain(host).split(".")[0]
     for t in tokens:
-        if t in reg_label:
+        if t in reg_label or (len(reg_label) >= 4 and reg_label in t):
             return "first_party", 0.9, f"brand token '{t}' in domain"
     if _matches(host, SDK_SUFFIXES):
         return "third_party_sdk", 0.9, "known SDK/analytics/ads domain"

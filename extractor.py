@@ -16,6 +16,7 @@ RETROFIT_RE = re.compile(rb'@(?:GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS)\(\s*(?:v
 CLIENT_RE = re.compile(rb'(?:baseUrl|\.url|HttpUrl\.(?:parse|get)|BASE_URL\w*|API_URL\w*|API_BASE\w*|ENDPOINT\w*)'
                        rb'\s*(?:\(|=)\s*"((?:https?|wss?)://[A-Za-z0-9.-]+)')
 CONST_RE = re.compile(rb'\w*(?:api|base|host|server|url|endpoint|domain)\w*\s*=\s*"((?:https?://)?[a-z0-9][a-z0-9.-]+\.[a-z]{2,})', re.I)
+CCTLDS = set("""ac ad ae af ag ai al am ao aq ar as at au aw ax az ba bb bd be bf bg bh bi bj bm bn bo br bs bt bw by bz ca cc cd cf cg ch ci ck cl cm cn co cr cu cv cw cx cy cz de dj dk dm do dz ec ee eg er es et eu fi fj fk fm fo fr ga gd ge gf gg gh gi gl gm gn gp gq gr gs gt gu gw gy hk hm hn hr ht hu id ie il im in io iq ir is it je jm jo jp ke kg kh ki km kn kp kr kw ky kz la lb lc li lk lr ls lt lu lv ly ma mc md me mg mh mk ml mm mn mo mp mq mr ms mt mu mv mw mx my mz na nc ne nf ng ni nl no np nr nu nz om pa pe pf pg ph pk pl pm pn pr ps pt pw qa re ro rs ru rw sa sb sc sd se sg si sk sl sm sn sr ss st su sv sx sy sz tc td tf tg th tj tk tl tm tn to tr tt tv tw tz ua ug uk us uy uz va vc ve vg vi vn vu wf ws ye yt za zm zw""".split())
 IP_RE = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
 
 GTLDS = set("""com net org info biz io co app dev ai cloud online site tech xyz edu gov mil int mobi me tv
@@ -68,8 +69,10 @@ def clean_host(h: bytes, from_url: bool):
     if tld in EXT_BLOCK:
         return None
     if not from_url:
-        if labels[0] in PKG_ROOTS or not (tld in GTLDS or len(tld) == 2):
+        if labels[0] in PKG_ROOTS or not (tld in GTLDS or tld in CCTLDS):
             return None
+        if len(labels[-2]) < 3 or labels[-2].isdigit() or any(c.isdigit() for c in labels[-2]) and len(labels[-2]) < 5:
+            return None  # too short / numeric -> almost always junk strings
     elif len(tld) < 2:
         return None
     return host
