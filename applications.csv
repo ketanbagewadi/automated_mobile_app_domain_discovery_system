@@ -1,4 +1,5 @@
-name,package,platform
-Bing,com.microsoft.bing,android
-Instagram,com.instagram.android,android
-Spotify,,android
+name,package
+Bing,com.microsoft.bing
+Other App,com.other.app
+Ghost,com.nope.app
+Also Missing,com.missing.app

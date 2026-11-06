@@ -6,6 +6,7 @@ One-time setup on the device/emulator:
   2. Open it once, grant the VPN permission, Settings -> enable 'Control permissions' / API,
      copy the API key (or approve the capture prompt the first time).
 """
+from progress import log
 import shutil
 import subprocess
 import time
@@ -45,7 +46,7 @@ def capture(apks: list, package: str, F: extractor.Findings, api_key: str = "", 
         raise RuntimeError("No adb device/emulator connected")
     name = f"cap_{package}_{int(time.time())}.pcap"
 
-    print(f"[*] Installing {package} on device ...")
+    log(f"[*] Installing {package} on device ...")
     if len(apks) == 1:
         adb("install", "-r", "-g", str(apks[0]), timeout=300)
     else:
@@ -56,7 +57,7 @@ def capture(apks: list, package: str, F: extractor.Findings, api_key: str = "", 
         "-e", "pcap_dump_mode", "pcap_file", "-e", "app_filter", package, "-e", "pcap_name", name)
     time.sleep(4)
 
-    print(f"[*] Exercising app (monkey, {events} events) ...")
+    log(f"[*] Exercising app (monkey, {events} events) ...")
     adb("shell", "monkey", "-p", package, "-c", "android.intent.category.LAUNCHER", "1")
     time.sleep(8)
     adb("shell", "monkey", "-p", package, "--throttle", "500", "--pct-syskeys", "0",
@@ -71,4 +72,4 @@ def capture(apks: list, package: str, F: extractor.Findings, api_key: str = "", 
     if not local.exists():
         raise RuntimeError(f"Could not pull pcap ({r.stderr.strip()}). Check PCAPdroid output path / API permission")
     n = parse_pcap(local, F)
-    print(f"[*] Runtime capture: {n} host observations")
+    log(f"[*] Runtime capture: {n} host observations")

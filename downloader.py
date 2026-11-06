@@ -1,4 +1,5 @@
 """Download APK/IPA by package id (apkeep -> APKPure fallback) and unpack bundles (xapk/apks)."""
+from progress import log
 import shutil
 import subprocess
 import urllib.request
@@ -31,7 +32,7 @@ def download(package: str, dest: Path, platform: str = "android") -> Path:
     dest.mkdir(parents=True, exist_ok=True)
     found = _existing(package, dest)
     if found:
-        print(f"[*] Using cached download: {found.name}")
+        log(f"[*] Using cached download: {found.name}")
         return found
 
     if platform == "ios":
@@ -48,7 +49,7 @@ def download(package: str, dest: Path, platform: str = "android") -> Path:
         found = _existing(package, dest)
         if found:
             return found
-        print(f"[!] apkeep failed: {(r.stderr or r.stdout).strip()[:200]}")
+        log(f"[!] apkeep failed: {(r.stderr or r.stdout).strip()[:200]}")
 
     url = f"https://d.apkpure.com/b/APK/{package}?version=latest"
     target = dest / f"{package}.apk"

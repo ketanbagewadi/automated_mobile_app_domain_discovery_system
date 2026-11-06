@@ -13,9 +13,9 @@ applications.csv -> download APK -> unzip (xapk/apks too) -> apktool + jadx deco
     #   ipatool                            - iOS IPA download (needs Apple login)
 
 ## applications.csv
-    name,package,platform
-    Bing,com.microsoft.bing,android
-    Spotify,,android            # package resolved via Play Store search
+    name,package
+    Bing,com.microsoft.bing
+    Spotify,                    # package resolved via Play Store search
 
 ## Run
     python main.py batch applications.csv --resume
@@ -27,7 +27,7 @@ applications.csv -> download APK -> unzip (xapk/apks too) -> apktool + jadx deco
 
 ## Output
     output/<AppName>.txt     one related domain per line (first-party + API + CDN), nothing else
-    output/failed.csv        apps that failed + why
+    output/failed.txt        apps that failed (download etc.): name | package | reason
     --full-report            also save every domain with category/is_api/source as CSV
 
 Fast by default: rules only (no Llama), apktool decode, apps processed 4 in parallel.

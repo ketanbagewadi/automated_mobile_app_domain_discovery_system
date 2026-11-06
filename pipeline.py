@@ -11,6 +11,7 @@ import expand
 import extractor
 import llm
 import rules
+from progress import log, start, stage
 
 RELATED = {"first_party", "same_company", "cdn_infra"}
 FIELDS = ["domain", "registered_domain", "category", "related", "is_api", "api_evidence", "sample_paths",
@@ -24,6 +25,7 @@ def safe_name(s: str) -> str:
 def analyze(apks, name, package, o):
     F = extractor.Findings()
     for apk in apks:
+        stage(f"scanning {apk.name} ({apk.stat().st_size // 1_000_000} MB)")
         extractor.scan_zip(apk, F)
         if not o.no_decompile:
             decompile.run(apk, F, use_apktool=not o.no_apktool, use_jadx=o.jadx)
@@ -36,6 +38,7 @@ def analyze(apks, name, package, o):
         except Exception as e:
             print(f"[!] runtime capture failed: {e}")
 
+    stage(f"extracting related domains from {len(F.hosts)} raw hostnames")
     tokens = rules.brand_tokens(name, package)
     rows, undecided = {}, []
     for host, info in sorted(F.hosts.items()):
@@ -54,12 +57,13 @@ def analyze(apks, name, package, o):
     if o.llm and undecided:  # optional, slow: only the top candidates
         undecided.sort(key=lambda d: (not F.hosts[d]["via_url"], not F.hosts[d]["api"], -F.hosts[d]["count"]))
         send = undecided[:o.max_llm]
-        print(f"[*] {name}: Llama classifying top {len(send)} of {len(undecided)} unknown domains")
+        stage(f"Llama classifying top {len(send)} of {len(undecided)} unknown domains")
         for d, (cat, conf, _) in llm.classify(o.ollama, o.model, name, package, send).items():
             rows[d].update(category=cat, confidence=conf, reason="llm")
 
     known = {d for d, r in rows.items() if r["category"] in ("first_party", "same_company")}
     if o.expand:
+        stage("crt.sh expansion")
         for base in sorted({rules.registered_domain(d) for d in known}):
             for sub in expand.crtsh(base):
                 rows.setdefault(sub, dict(domain=sub, category="first_party", confidence=0.8, reason=f"crt.sh {base}",
@@ -75,15 +79,18 @@ def analyze(apks, name, package, o):
 
 
 def process_app(name, package, platform, o, out_root: Path, local_file=None):
-    """Returns (display_name, sorted related domains) or None if skipped."""
+    """Returns (display_name, related domains) or None if skipped."""
+    start(name or package or "?")
     if not package:
+        stage("looking up package id on Play Store")
         package = downloader.resolve_package(name)
     label = name or package
     txt = out_root / f"{safe_name(label)}.txt"
     if o.resume and txt.exists():
-        print(f"[*] {label}: skipped (already done)")
         return None
+    stage("downloading APK" if not local_file else "using local file")
     src = local_file or downloader.download(package, Path(o.downloads), platform)
+    stage("unpacking")
     work = Path(o.downloads) / "_unpacked" / package
     apks = downloader.prepare(src, work)
     if not name and platform == "android":
@@ -91,6 +98,7 @@ def process_app(name, package, platform, o, out_root: Path, local_file=None):
         txt = out_root / f"{safe_name(label)}.txt"
     final, endpoints = analyze(apks, label, package, o)
 
+    stage("saving")
     related = sorted({r["domain"] for r in final if r["related"]})
     out_root.mkdir(parents=True, exist_ok=True)
     txt.write_text("\n".join(related) + ("\n" if related else ""))
@@ -102,5 +110,4 @@ def process_app(name, package, platform, o, out_root: Path, local_file=None):
             w.writeheader()
             w.writerows(final)
         (d / "endpoints.json").write_text(json.dumps(endpoints, indent=2))
-    print(f"[+] {label}: {len(related)} related domains -> {txt}")
     return label, related

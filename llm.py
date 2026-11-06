@@ -1,4 +1,5 @@
 """Local LLM (Ollama) client: domain classification + related-domain suggestions."""
+from progress import log
 import json
 import urllib.request
 
@@ -63,7 +64,7 @@ Return JSON mapping every domain to one category, e.g. {{"example.com":"unrelate
         try:
             data = chat_json(host, model, SYSTEM, prompt, timeout=300)
         except Exception as e:
-            print(f"[!] LLM batch {n}/{total} failed: {e}")
+            log(f"[!] LLM batch {n}/{total} failed: {e}")
             data = {}
         data = data.get("results", data) if isinstance(data, dict) else {}
         if isinstance(data, list):  # tolerate [{"domain":..,"category":..}]
@@ -72,7 +73,7 @@ Return JSON mapping every domain to one category, e.g. {{"example.com":"unrelate
             d = str(d).lower().strip()
             if d in chunk and cat in CATEGORIES:
                 result[d] = (cat, 0.7, "")
-        print(f"    llm batch {n}/{total} done ({len(result)} classified)", flush=True)
+        log(f"    llm batch {n}/{total} done ({len(result)} classified)", flush=True)
     return result
 
 

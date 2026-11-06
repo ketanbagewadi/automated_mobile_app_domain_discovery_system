@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """apk-domains: for every app in a CSV -> download APK -> unzip + decompile -> extract domains ->
-save ONLY the related domains to output/<AppName>.txt.
+save ONLY the related domains to output/<AppName>.txt. Apps that fail are listed in output/failed.txt.
 
   python main.py batch applications.csv
   python main.py apk some.apk --name Bing
@@ -8,6 +8,7 @@ save ONLY the related domains to output/<AppName>.txt.
 import argparse
 import csv
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -20,6 +21,7 @@ except Exception:
 import decompile
 import llm
 import pipeline
+import progress
 
 
 def common(p):
@@ -43,18 +45,27 @@ def common(p):
     p.add_argument("--full-report", action="store_true", help="also save all domains + categories as CSV")
 
 
+def write_failed(out_root: Path, failed):
+    path = out_root / "failed.txt"
+    if not failed:
+        path.unlink(missing_ok=True)
+        return
+    out_root.mkdir(parents=True, exist_ok=True)
+    lines = [f"{f['name']} | {f['package']} | {f['error']}" for f in sorted(failed, key=lambda x: x["name"].lower())]
+    path.write_text("# app name | package | reason\n" + "\n".join(lines) + "\n")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    b = sub.add_parser("batch", help="CSV with columns: name,package,platform")
+    b = sub.add_parser("batch", help="CSV with columns: name,package  (package optional)")
     b.add_argument("csv")
     b.add_argument("--limit", type=int, default=0)
     common(b)
-    s = sub.add_parser("apk", help="analyze one local APK/XAPK/IPA")
+    s = sub.add_parser("apk", help="analyze one local APK/XAPK")
     s.add_argument("file")
     s.add_argument("--name")
     s.add_argument("--package")
-    s.add_argument("--platform", default="android")
     common(s)
     o = ap.parse_args()
 
@@ -73,41 +84,51 @@ def main():
         if not f.exists():
             sys.exit(f"File not found: {f}")
         from extractor import get_package
-        pkg = o.package or (get_package(f)[0] if f.suffix == ".apk" else None) or f.stem
-        pipeline.process_app(o.name, pkg, o.platform, o, out_root, local_file=f)
+        pkg = o.package or get_package(f)[0] or f.stem
+        progress.init(1)
+        try:
+            res = pipeline.process_app(o.name, pkg, "android", o, out_root, local_file=f)
+            progress.done(res[0], "ok", f"- {len(res[1])} related domains -> {out_root}/{pipeline.safe_name(res[0])}.txt")
+        except Exception as e:
+            progress.done(o.name or pkg, "failed", f"- {e}")
         return
 
-    apps = list(csv.DictReader(open(o.csv, newline="", encoding="utf-8-sig")))
+    apps = []
+    for row in csv.DictReader(open(o.csv, newline="", encoding="utf-8-sig")):
+        a = {(k or "").strip().lower(): (v or "").strip() for k, v in row.items()}
+        name = a.get("name") or a.get("app_name") or a.get("application") or ""
+        pkg = a.get("package") or a.get("bundle_id") or ""
+        if name or pkg:
+            apps.append((name, pkg))
     if o.limit:
         apps = apps[:o.limit]
+    total = len(apps)
+    progress.init(total)
+    print(f"[*] {total} apps to process | {o.workers} in parallel | output -> {out_root}/<AppName>.txt\n")
 
-    def work(a):
-        a = {k.strip().lower(): (v or "").strip() for k, v in a.items()}
-        name = a.get("name") or a.get("app_name") or a.get("application") or ""
-        return name, a.get("package") or a.get("bundle_id") or "", (a.get("platform") or "android").lower()
-
-    failed, done = [], 0
+    failed = []
     with ThreadPoolExecutor(max_workers=max(1, o.workers)) as ex:
-        futs = {}
-        for a in apps:
-            name, pkg, plat = work(a)
-            futs[ex.submit(pipeline.process_app, name, pkg, plat, o, out_root)] = (name, pkg)
+        futs = {ex.submit(pipeline.process_app, n, p, "android", o, out_root): (n, p) for n, p in apps}
         for fut in as_completed(futs):
             name, pkg = futs[fut]
+            shown = name or pkg
             try:
-                fut.result()
-                done += 1
+                res = fut.result()
+                if res is None:
+                    progress.done(shown, "skipped", "- already done (--resume)")
+                else:
+                    progress.done(res[0], "ok", f"- {len(res[1])} related domains -> {out_root}/{pipeline.safe_name(res[0])}.txt")
             except Exception as e:
-                print(f"[x] {name or pkg}: FAILED - {e}")
-                failed.append({"name": name, "package": pkg, "error": str(e)[:300]})
+                err = " ".join(str(e).split())[:250]
+                failed.append({"name": shown, "package": pkg, "error": err})
+                progress.done(shown, "failed", f"- {err}")
+                write_failed(out_root, failed)  # saved immediately, not only at the end
 
-    out_root.mkdir(parents=True, exist_ok=True)
+    write_failed(out_root, failed)
+    print(f"\n[+] Finished in {time.strftime('%M:%S', time.gmtime(time.time() - progress._s['start']))}: "
+          f"{progress._s['ok']} ok, {progress._s['skipped']} skipped, {len(failed)} failed")
     if failed:
-        with open(out_root / "failed.csv", "w", newline="") as f:
-            w = csv.DictWriter(f, fieldnames=["name", "package", "error"])
-            w.writeheader()
-            w.writerows(failed)
-    print(f"\n[+] Finished: {done} ok, {len(failed)} failed. Text files are in {out_root}/ (failures: failed.csv)")
+        print(f"[!] Failed apps listed in {out_root}/failed.txt")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 """Optional network expansion: crt.sh subdomains + DNS verification."""
+from progress import log
 import json
 import socket
 import urllib.request
@@ -18,7 +19,7 @@ def crtsh(domain: str, limit=200) -> set[str]:
         with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "apk-domains"}), timeout=40) as r:
             rows = json.loads(r.read())
     except Exception as e:
-        print(f"[!] crt.sh failed for {domain}: {e}")
+        log(f"[!] crt.sh failed for {domain}: {e}")
         return set()
     names = set()
     for row in rows:
